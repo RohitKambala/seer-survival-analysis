@@ -2,22 +2,22 @@
 title: "Survival Analysis of Breast Cancer Patients Using SEER Data"
 author: "Rohit Kambala"
 date: "`r Sys.Date()`"
-output: pdf_document
+output:
+  pdf_document: default
+  word_document: default
 ---
 
 # 1. Introduction
 
-Breast cancer is one of the most commonly diagnosed cancers worldwide and remains a major contributor to cancer-related mortality. Understanding survival patterns and identifying prognostic factors associated with mortality are critical for evaluating disease burden and informing clinical and public health decision-making.
+Breast cancer is among the most commonly diagnosed cancers worldwide and a leading cause of cancer-related death. Survival outcomes vary substantially by stage at diagnosis, patient demographics, and time period, making population-level analysis useful for understanding where disparities exist and how outcomes have changed over time.
 
-Large population-based cancer registries, such as the Surveillance, Epidemiology, and End Results (SEER) program, provide high-quality longitudinal data that allow researchers to study survival outcomes across diverse populations. SEER captures standardized information on tumor characteristics, patient demographics, follow-up time, and vital status, making it well-suited for survival analysis.
-
-The objective of this project is to examine overall survival among breast cancer patients diagnosed between 2010 and 2015 using SEER registry data. Specifically, this analysis aims to:
+The Surveillance, Epidemiology, and End Results (SEER) program provides individual-level registry data on cancer diagnoses, follow-up time, and vital status across a large and geographically diverse population. This analysis uses SEER data to examine overall survival among breast cancer patients diagnosed between 2010 and 2015. Specifically, it aims to:
 
 - Describe overall survival patterns using Kaplan–Meier methods
 
-- Compare survival distributions across key clinical and demographic subgroups
+- Compare survival across stage at diagnosis, sex, and diagnosis period
 
-- Quantify associations between prognostic factors and mortality using Cox proportional hazards regression
+- Estimate prognostic associations with mortality using Cox proportional hazards regression
 
 # 2. Data Source and Study Population
 
@@ -48,6 +48,7 @@ library(tidyverse)
 library(survival)
 library(survminer)
 library(janitor)
+library(cmprsk)
 ```
 
 
@@ -61,7 +62,7 @@ glimpse(seer)
 ```
 
 
-```{r data-cleaning}
+```{r data-cleaning, warning=FALSE}
 # Convert survival time to numeric months
 seer <- seer %>%
 mutate(
@@ -131,7 +132,7 @@ ggsurvplot(
 )
 ```
 **Interpretation:**
-The overall Kaplan–Meier survival curve shows a steady decline in survival probability following breast cancer diagnosis, with the most pronounced decrease occurring in the early post-diagnosis period. This pattern suggests that mortality risk is highest shortly after diagnosis and treatment initiation, followed by a more gradual decline among longer-term survivors. Such a trajectory is consistent with clinical expectations in population-based cancer data and reflects both disease severity at diagnosis and early treatment outcomes.
+The overall survival curve declines steadily from diagnosis, with the steepest drop occurring in the first 20-30 months. After that, the rate of decline slows among patients who remain in follow-up. This pattern is typical in population-based breast cancer data, where early mortality reflects a mix of aggressive disease presentations and treatment-related events.
 
 ## 5.2 Survival by Stage at Diagnosis
 
@@ -163,11 +164,11 @@ ggsurvplot(
 )
 ```
 **Interpretation:**
-Kaplan–Meier survival curves stratified by stage at diagnosis show clear and early separation between localized, regional, and distant disease. Patients diagnosed with localized breast cancer exhibit the highest survival probabilities throughout follow-up, while those with distant-stage disease experience substantially lower survival, particularly in the early post-diagnosis period. Regional-stage disease demonstrates intermediate survival, with curves consistently falling between localized and distant stages.
+The stage-stratified curves separate early and stay separated, which is the expected pattern when stage is a strong prognostic factor. Localized disease shows the best survival throughout follow-up. Distant-stage patients experience rapid early mortality, with the median survival falling well below that of the other groups. Regional disease sits in between, tracking closer to localized in the early months before the gap widens over time.
 
-A log-rank test indicates statistically significant differences in survival distributions across stages, supporting the strong prognostic role of stage at diagnosis in breast cancer outcomes. The early divergence of the curves suggests that stage primarily influences short- to medium-term survival risk, with differences persisting over time.
+The log-rank test result (p < 0.0001) confirms that these differences are not due to chance, though with over 350,000 observations that result is almost guaranteed regardless of effect size.
 
-Although formal tests of the proportional hazards assumption suggested statistical evidence of non-proportionality for stage, this finding is common in large population-based datasets and likely reflects high statistical power rather than a clinically meaningful violation. Visual inspection of the Kaplan–Meier curves did not suggest severe departures from proportionality. Therefore, hazard ratio estimates for stage are interpreted as average effects over the follow-up period rather than strictly constant effects at all time points.
+Schoenfeld residual tests flagged non-proportional hazards for stage, which is common in large registry datasets. The KM curves do not show the kind of crossing or late convergence that would indicate a serious violation. Hazard ratios from the Cox model are best read as average effects across the follow-up window rather than constant instantaneous effects.
 
 ##  5.3 Survival by Sex
 
@@ -190,7 +191,7 @@ ggsurvplot(
 )
 ```
 **Interpretation:**
-Female patients exhibit modestly higher survival probabilities compared to male patients, although the absolute difference is small. Given the low proportion of male breast cancer cases, this finding should be interpreted cautiously and may reflect underlying differences in tumor biology, diagnosis patterns, or sample size imbalance rather than a large clinical effect.
+Female patients show modestly better survival than male patients, but the gap is small and should be read carefully. Male breast cancer makes up a very small fraction of cases in this dataset, so the comparison is unbalanced. The difference likely reflects a mix of tumor biology, stage at diagnosis, and the fact that male patients are often diagnosed later when awareness is lower.
 
 # 6. Cox Proportional Hazards Regression
 
@@ -229,7 +230,9 @@ summary(cox_multi)
 
 
 **Interpretation:**
-In the multivariable Cox proportional hazards model, stage at diagnosis remains the strongest predictor of mortality, with patients diagnosed at regional and distant stages experiencing substantially higher hazards of death compared to those diagnosed with localized disease. Sex shows a smaller but statistically significant association with survival, while more recent diagnosis periods are associated with modestly lower hazards, suggesting incremental improvements in survival over time. These results indicate that although temporal gains in breast cancer survival exist, stage at diagnosis continues to be the primary determinant of patient outcomes.
+Stage dominates the model. Compared to distant-stage disease (the reference), localized patients have roughly one-tenth the hazard of death (HR ~0.11), and regional patients have about one-fifth (HR ~0.19). These are large effects that hold up after adjusting for sex and diagnosis period.
+
+Sex contributes meaningfully: male patients have about 1.73 times the hazard of female patients after adjustment. The diagnosis period effect is smaller but present -- patients diagnosed in 2014-2015 have modestly lower hazards than those diagnosed in 2010-2011, suggesting some improvement in outcomes over this window, though the magnitude is small (HR ~0.95).
 
 ## 6.3 Proportional Hazards Assumption
 
@@ -242,14 +245,84 @@ ph_test
 
 
 **Interpretation:**
-Tests based on Schoenfeld residuals indicated statistical evidence of non-proportional hazards for stage and sex. However, given the extremely large sample size, even minor deviations from proportionality can produce highly significant test results. Visual inspection of Kaplan–Meier curves did not suggest severe or clinically meaningful violations. Therefore, hazard ratios from the Cox model are interpreted as average effects over the follow-up period, rather than strictly time-constant effects.
+The Schoenfeld residual tests flag stage and sex as non-proportional (both p < 0.001), but with n > 350,000 this test will reject proportionality for almost any real deviation, including trivial ones. The KM curves for stage do not cross and do not converge late in follow-up, which is what a meaningful violation would look like. The Cox HRs are interpreted as time-averaged estimates rather than constant instantaneous effects.
 
+## 6.4 Competing Risks: Breast Cancer vs. Other-Cause Mortality
+
+```{r competing-risks, message=FALSE, warning=FALSE}
+library(cmprsk)
+
+# Build cause-specific event indicator using SEER COD variable
+# 1 = breast cancer death (event of interest)
+# 2 = other-cause death (competing event)
+# 0 = censored (alive at cutoff)
+
+seer_cr <- seer_stage %>%
+  mutate(
+    event_cr = case_when(
+      seer_cause_specific_death_classification == 
+        "Dead (attributable to this cancer dx)" ~ 1,
+      vital_status_recode_study_cutoff_used == "Alive" ~ 0,
+      TRUE ~ 2
+    )
+  )
+
+table(seer_cr$event_cr)
+```
+
+```{r cuminc-by-stage}
+# Cumulative incidence by stage
+# Gray's test is computed automatically by cuminc()
+
+ci_stage <- cuminc(
+  ftime   = seer_cr$survival_months,
+  fstatus = seer_cr$event_cr,
+  group   = seer_cr$stage
+)
+
+# Plot CIF for breast cancer death (event 1) by stage only
+# Pull just the event=1 curves from the cuminc object
+plot(
+  ci_stage,
+  curvlab  = names(ci_stage),
+  col      = c("#1B9E77", "#D95F02", "#7570B3",
+               "#66C2A5", "#FC8D62", "#8DA0CB"),
+  lty      = c(1, 1, 1, 2, 2, 2),
+  xlab     = "Time since diagnosis (months)",
+  ylab     = "Cumulative incidence",
+  main     = "Cumulative Incidence by Stage: Breast Cancer vs. Other-Cause Death",
+  ylim     = c(0, 0.8)
+)
+legend("right",
+       legend = c("Localized - BC death", "Regional - BC death",
+                  "Distant - BC death",
+                  "Localized - Other death", "Regional - Other death",
+                  "Distant - Other death"),
+       col = c("#1B9E77", "#D95F02", "#7570B3",
+               "#66C2A5", "#FC8D62", "#8DA0CB"),
+       lty = c(1, 1, 1, 2, 2, 2),
+       cex = 0.65,
+       bty = "n")
+```
+
+```{r grays-test}
+# Gray's test results -- tests whether CIFs differ across stage groups
+# for breast cancer death specifically
+print(ci_stage$Tests)
+```
+**Interpretation:**
+
+The CIF plot separates two things the KM analysis could not: dying from breast cancer versus dying from something else. For distant-stage patients, breast cancer death accumulates rapidly, reaching roughly 0.75 by the end of follow-up. Localized patients show a very different picture, with breast cancer-specific cumulative incidence staying below 0.10 throughout. Regional disease sits between these two.
+
+Other-cause mortality (dashed lines) rises gradually across all stage groups and follows a similar trajectory regardless of stage, which makes sense since background mortality risk does not depend on cancer stage. For localized patients, other-cause death is actually more common than breast cancer death over a long enough horizon, which is something the standard KM analysis obscures.
+
+Gray's test confirms that the CIFs differ significantly across stage groups for breast cancer death (stat = 81,657, p < 0.001) and other-cause death (stat = 479, p < 0.001). The key methodological point: KM treats other-cause deaths as censored observations, which inflates the estimated probability of breast cancer death. The CIF does not make that assumption and gives a more accurate read of absolute risk.
 
 # 7. Limitations
 
 - This study used SEER public-use registry data, which do not contain detailed information on treatment modalities (e.g., chemotherapy regimens, targeted therapies, radiation dose) or comorbid conditions. As a result, the observed associations between stage, sex, and survival may be partially confounded by unmeasured clinical and treatment-related factors.
 
-- The analysis focused on overall survival rather than cause-specific survival. Deaths from causes unrelated to breast cancer were included as events, which may attenuate the estimated associations between cancer stage and mortality. However, overall survival remains a commonly used and clinically relevant endpoint in population-based registry studies.
+- The primary Cox regression models used overall survival as the endpoint, meaning deaths from causes unrelated to breast cancer were included as events. To address this, a competing risks analysis was conducted to separately estimate breast cancer-specific and other-cause mortality using the SEER cause-specific death classification variable. Cumulative incidence functions and Gray's test were used in place of Kaplan-Meier estimates and log-rank tests, which are known to overestimate cause-specific risk in the presence of competing events.
 
 - Information on age was limited to recoded categories in the public-use dataset, preventing modeling of age as a continuous covariate. This limitation may reduce precision in estimating age-related survival differences and restrict more flexible modeling of age effects.
 
@@ -260,22 +333,16 @@ Tests based on Schoenfeld residuals indicated statistical evidence of non-propor
 
 # 8. Implications
 
-The findings of this analysis have several important implications for public health practice and cancer outcomes research. The strong and consistent association between stage at diagnosis and overall survival highlights the critical importance of early detection and timely diagnosis of breast cancer. Population-level survival gains are likely to be driven more by shifts toward earlier-stage diagnosis than by modest improvements in survival within advanced stages alone.
+Stage at diagnosis is the clearest driver of breast cancer survival in this dataset, which points toward early detection as the most direct lever for improving population-level outcomes. Shifts toward earlier-stage diagnosis at the population level would likely do more for survival rates than incremental improvements in treatment for advanced disease.
 
-The observed differences in survival by sex, although smaller in magnitude, suggest that demographic factors may influence breast cancer outcomes and warrant further investigation. These findings reinforce the need for continued attention to sex-specific patterns in diagnosis, treatment, and follow-up, particularly for less common populations such as male breast cancer patients.
+The sex difference is smaller and harder to interpret cleanly. Male breast cancer is rare, the comparison group is small, and the gap in survival likely reflects multiple overlapping factors including later diagnosis, different tumor biology, and lower clinical awareness. It is worth tracking but should not be over-interpreted from registry data alone.
 
-The modest improvement in survival across more recent diagnosis periods suggests incremental progress in breast cancer management during the study period. This trend may reflect advances in screening, treatment, and supportive care, though further analyses incorporating treatment and molecular data would be required to confirm these mechanisms.
-
-From a methodological perspective, this study demonstrates the utility of population-based cancer registry data for evaluating survival outcomes at scale. Despite limitations inherent to public-use registry data, SEER remains a valuable resource for monitoring long-term survival trends and identifying disparities that can inform future research, policy development, and resource allocation.
+The modest improvement in survival for more recently diagnosed patients is real but small. Whether it reflects better screening, improved systemic therapies, or both cannot be determined from these data alone. Answering that question would require treatment variables that SEER public-use data does not include.
 
 # 9. Conclusion
 
-Using population-based SEER data, this analysis examined overall and subgroup-specific breast cancer survival patterns using Kaplan–Meier methods and Cox proportional hazards modeling. Survival probabilities declined most rapidly during the early post-diagnosis period, with long-term survival strongly determined by stage at diagnosis. Patients diagnosed with localized disease consistently exhibited substantially better survival compared to those diagnosed at regional or distant stages, highlighting the critical importance of early detection.
+This analysis used SEER registry data to examine breast cancer survival patterns across stage, sex, and diagnosis period. Stage at diagnosis was by far the strongest predictor of outcomes. Localized disease carried substantially better survival than regional or distant disease, a difference that appeared early and persisted across the full follow-up window. The multivariable Cox model confirmed this after adjustment, with distant-stage patients facing roughly nine times the mortality hazard of localized patients.
 
-Multivariable Cox regression results reinforced these findings, demonstrating that stage at diagnosis remained the dominant predictor of mortality even after adjusting for sex and diagnosis period. More recent diagnosis periods were associated with modest reductions in mortality risk, suggesting incremental improvements in breast cancer outcomes over time, potentially reflecting advances in screening, treatment, and clinical management.
+The competing risks analysis added precision to the overall survival findings. For localized-stage patients, other-cause mortality is a meaningful competing event, and the standard KM approach would overestimate breast cancer-specific risk in that group. The cumulative incidence functions give a more honest picture of what patients are actually dying from.
 
-This study has several limitations. SEER data lack detailed treatment information, molecular tumor characteristics, and cause-specific mortality for all cases, limiting causal interpretation. Additionally, survival estimates reflect overall rather than breast cancer–specific mortality. Despite these constraints, the analysis provides valuable population-level insight into breast cancer survival dynamics and underscores the continued public health importance of early diagnosis and stage-specific interventions.
-
-Future research could extend this work by incorporating cause-specific survival, treatment variables, or restricted-access SEER data to further elucidate mechanisms underlying observed survival disparities.
-
-Overall, this analysis demonstrates how population-based registry data can be leveraged using survival analysis methods to generate meaningful, policy-relevant insights into cancer outcomes.
+The main limitation is the absence of treatment data. Stage associations in this analysis could partly reflect differences in treatment received rather than disease biology alone. Future work with restricted-access SEER data or linked claims data could address this.
